@@ -6,9 +6,8 @@ every backend, capability check and safety rule is implemented once in Rust.
 Part of [Universal Local AI](https://github.com/kekko7072/universal_local_ai)
 ([vezz.io](https://vezz.io)).
 
-> Early `0.x`. What a backend can do depends entirely on
-> the bound `rust_local_ai` revision. Today that means Apple Foundation Models
-> (beta) on macOS and an explicit `unavailable` everywhere else. This package
+> Early `0.x`, built on `rust_local_ai` 0.2. What a backend can do depends
+> entirely on that core: see the table below. This package
 > never downloads a model or installs a provider.
 
 ## Install
@@ -22,8 +21,12 @@ Wheels are published for CPython 3.9+ (one `abi3` wheel per platform):
 | Platform | Wheels | Backend |
 |---|---|---|
 | macOS 12+ (Apple silicon, Intel) | `arm64`, `x86_64` | Apple Foundation Models on macOS 26+ with Apple Intelligence; otherwise reports why it is unavailable |
-| Linux (glibc and musl) | `x86_64`, `aarch64` | Reports `provider_not_installed` until a Linux adapter lands in `rust_local_ai` |
-| Windows | `x64`, `arm64` | Reports unavailable until the Windows adapter lands |
+| Linux (glibc and musl) | `x86_64`, `aarch64` | Ubuntu inference snaps (for example `qwen3`), if one is installed |
+| Windows | `x64`, `arm64` | Phi Silica (beta): needs a Copilot+ PC or supported GPU, Windows 11 25H2+, and an app with package identity, so a plain `python.exe` reports `provider_not_installed` |
+| Any | — | `openai_compatible()`: a local llama.cpp, Ollama, LM Studio or Foundry Local server |
+
+"beta" means the Rust core builds and type-checks this backend in CI, but it
+hasn't yet been run against a real model.
 
 The macOS wheels are built with the macOS 26 SDK, and the release fails if
 the Foundation Models bridge is missing. Other platforms fall back to the
@@ -77,6 +80,23 @@ asyncio.run(main())
 `session.stream(...)` supports both `async for` and plain `for`. The
 generation starts on the first iteration. Call `stream.close()` to stop early
 and free the session for the next turn.
+
+## Choosing a backend
+
+```python
+model = lai.detect()                                  # the OS-native backend
+model = lai.openai_compatible("http://localhost:11434/v1")      # e.g. Ollama
+model = lai.openai_compatible("http://127.0.0.1:8080/v1", "qwen3")  # pick a model
+model = lai.inference_snap("qwen3")                   # a specific Ubuntu snap (Linux)
+```
+
+`openai_compatible` only accepts plain `http://` URLs on this machine
+(`localhost`, `127.0.0.0/8`, `::1`), so prompts never leave it. Without a
+model name it uses the first one the server lists.
+
+`model.prepare()` (or `prepare_sync()`) explicitly asks the backend to get its
+model ready. On Windows this may start a large Phi Silica download, so ask the
+user first. No other call ever downloads anything.
 
 ## API
 
@@ -152,10 +172,10 @@ CI runs these steps on Linux, macOS and Windows with Python 3.9 and 3.13, runs
 the examples, and builds abi3 wheels and an sdist as artifacts. CI never
 publishes.
 
-The Rust core is pinned to a specific `rust_local_ai` git revision in
-`Cargo.toml` (it is also exposed as
-`python_local_ai._native.RUST_LOCAL_AI_REVISION`). Bump it deliberately
-whenever the core changes.
+The Rust core comes from crates.io (`rust_local_ai = "0.2.0"` in
+`Cargo.toml`, locked in `Cargo.lock`). The resolved version is exposed as
+`python_local_ai._native.RUST_LOCAL_AI_VERSION`. To move to a new core,
+release `rust_local_ai` first, then bump it here and run the tests.
 
 ## Releasing
 

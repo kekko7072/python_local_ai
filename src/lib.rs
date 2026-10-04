@@ -71,6 +71,7 @@ fn backend_kind(kind: core::BackendKind) -> &'static str {
         K::UbuntuInferenceSnap => "ubuntu_inference_snap",
         K::LinuxProvider => "linux_provider",
         K::Fake => "fake",
+        K::OpenAiCompatible => "openai_compatible",
         K::Unsupported => "unsupported",
         _ => "unknown",
     }
@@ -498,6 +499,27 @@ impl LocalAiModel {
         })
     }
 
+    /// Explicitly prepares the model and returns the resulting availability.
+    ///
+    /// On Windows this asks the OS to install Phi Silica, which can be a large
+    /// download, so get the user's consent first. Other backends only report
+    /// their availability. No other call ever triggers a download.
+    fn prepare<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let model = self.inner.clone();
+        awaitable(
+            py,
+            async move { model.prepare().await.map(Availability::from) },
+        )
+    }
+
+    fn prepare_sync(&self, py: Python<'_>) -> PyResult<Availability> {
+        let model = self.inner.clone();
+        blocking(
+            py,
+            async move { model.prepare().await.map(Availability::from) },
+        )
+    }
+
     #[pyo3(signature = (instructions=None))]
     fn open_session<'py>(
         &self,
@@ -540,6 +562,40 @@ impl LocalAiModel {
 #[pyfunction]
 fn detect(py: Python<'_>) -> PyResult<LocalAiModel> {
     blocking(py, async { core::detect().await }).map(|inner| LocalAiModel { inner })
+}
+
+/// Uses a local service that speaks the OpenAI chat-completions API, such as
+/// llama.cpp's server, Ollama, LM Studio or Foundry Local.
+///
+/// Only plain ``http://`` URLs on this machine (``localhost``, ``127.0.0.0/8``,
+/// ``::1``) are accepted, so prompts never leave it. Without ``model``, the
+/// first model the service lists is used. Nothing is contacted until use.
+#[pyfunction]
+#[pyo3(signature = (base_url, model=None))]
+fn openai_compatible(base_url: &str, model: Option<&str>) -> PyResult<LocalAiModel> {
+    core::openai_compatible(base_url, model)
+        .map(|inner| LocalAiModel { inner })
+        .map_err(to_py_err)
+}
+
+/// Uses a specific Ubuntu inference snap (for example ``"qwen3"``) instead of
+/// the first suitable one :func:`detect` would pick. Linux only; elsewhere it
+/// raises :class:`UnavailableError`.
+#[pyfunction]
+fn inference_snap(name: &str) -> PyResult<LocalAiModel> {
+    #[cfg(target_os = "linux")]
+    {
+        Ok(LocalAiModel {
+            inner: core::inference_snap(name),
+        })
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = name;
+        Err(to_py_err(core::LocalAiError::Unavailable {
+            reason: core::AvailabilityReason::UnsupportedOperatingSystem,
+        }))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -922,6 +978,8 @@ impl FakeBackend {
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(detect, m)?)?;
+    m.add_function(wrap_pyfunction!(openai_compatible, m)?)?;
+    m.add_function(wrap_pyfunction!(inference_snap, m)?)?;
     m.add_class::<LocalAiModel>()?;
     m.add_class::<LocalAiSession>()?;
     m.add_class::<ResponseStream>()?;
@@ -930,9 +988,6 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<BackendInfo>()?;
     m.add_class::<AiResponse>()?;
     m.add_class::<FakeBackend>()?;
-    m.add(
-        "RUST_LOCAL_AI_REVISION",
-        "68d9edc026dac2c5e645a7f22bd8b6965aec2f40",
-    )?;
+    m.add("RUST_LOCAL_AI_VERSION", env!("RUST_LOCAL_AI_VERSION"))?;
     Ok(())
 }
