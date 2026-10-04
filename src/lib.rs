@@ -932,7 +932,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<FakeBackend>()?;
     m.add(
         "RUST_LOCAL_AI_REVISION",
-        "cfa69b154c48e0c8977948caac41ad61d8b144a4",
+        "68d9edc026dac2c5e645a7f22bd8b6965aec2f40",
     )?;
     Ok(())
 }

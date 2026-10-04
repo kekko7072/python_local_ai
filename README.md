@@ -6,24 +6,35 @@ every backend, capability check and safety rule is implemented once in Rust.
 Part of [Universal Local AI](https://github.com/kekko7072/universal_local_ai)
 ([vezz.io](https://vezz.io)).
 
-> Early `0.x`, **not yet on PyPI**. What a backend can do depends entirely on
+> Early `0.x`. What a backend can do depends entirely on
 > the bound `rust_local_ai` revision. Today that means Apple Foundation Models
 > (beta) on macOS and an explicit `unavailable` everywhere else. This package
 > never downloads a model or installs a provider.
 
-## Install (from source for now)
+## Install
 
-You need Rust stable and Python 3.9+. On macOS the Swift toolchain from Xcode
-builds the Apple bridge.
+```sh
+pip install python_local_ai
+```
+
+Wheels are published for CPython 3.9+ (one `abi3` wheel per platform):
+
+| Platform | Wheels | Backend |
+|---|---|---|
+| macOS 12+ (Apple silicon, Intel) | `arm64`, `x86_64` | Apple Foundation Models on macOS 26+ with Apple Intelligence; otherwise reports why it is unavailable |
+| Linux (glibc and musl) | `x86_64`, `aarch64` | Reports `provider_not_installed` until a Linux adapter lands in `rust_local_ai` |
+| Windows | `x64`, `arm64` | Reports unavailable until the Windows adapter lands |
+
+The macOS wheels are built with the macOS 26 SDK, and the release fails if
+the Foundation Models bridge is missing. Other platforms fall back to the
+sdist, which needs Rust stable (and Xcode on macOS).
+
+### From source
 
 ```sh
 pip install maturin
 maturin develop            # into the active virtualenv
-# or: maturin build --release && pip install target/wheels/*.whl
 ```
-
-Each wheel is a single `abi3` build that works on every CPython from 3.9
-onwards.
 
 ## Quick start (blocking)
 
@@ -145,6 +156,23 @@ The Rust core is pinned to a specific `rust_local_ai` git revision in
 `Cargo.toml` (it is also exposed as
 `python_local_ai._native.RUST_LOCAL_AI_REVISION`). Bump it deliberately
 whenever the core changes.
+
+## Releasing
+
+`.github/workflows/release.yml` builds every wheel and the sdist, tests the
+installed wheels on Linux, macOS and Windows, and uploads them to PyPI through
+Trusted Publishing when a GitHub release is published:
+
+1. One-time setup: on pypi.org, add a *pending trusted publisher* for the
+   project `python_local_ai` (owner `kekko7072`, repository
+   `python_local_ai`, workflow `release.yml`, environment `pypi`). Do the
+   same on test.pypi.org with the environment `testpypi` for dry runs. Then
+   create the `pypi` and `testpypi` environments in the GitHub repository
+   settings; adding required reviewers to `pypi` is recommended.
+2. Bump the version in `pyproject.toml`, `Cargo.toml` and
+   `python/python_local_ai/__init__.py`. The workflow refuses mismatches.
+3. Optional dry run: Actions → Release → Run workflow → `testpypi`.
+4. Publish a GitHub release tagged `v<version>`.
 
 ## License
 
