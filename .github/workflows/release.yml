@@ -1,8 +1,15 @@
 name: Release
 
-# Builds abi3 wheels and an sdist, then publishes them to PyPI when a GitHub
-# release is published. The tag must match the version in pyproject.toml and
-# Cargo.toml (`v0.1.0` or `0.1.0`).
+# Releases python_local_ai from main. Bump the version in pyproject.toml,
+# Cargo.toml and python/python_local_ai/__init__.py and add a `## <version>`
+# entry to CHANGELOG.md; when that merges, this workflow builds abi3 wheels
+# and an sdist, tests the installed wheels, publishes them to PyPI and
+# creates the GitHub release `v<version>` with that changelog entry and every
+# distribution attached. A push whose version is already on PyPI, or already
+# tagged, does nothing.
+#
+# Publishing a GitHub release by hand still works: the tag must match the
+# version (`v0.1.0` or `0.1.0`), and the distributions are attached to it.
 #
 # Publishing uses PyPI Trusted Publishing (OIDC), so no API token is stored.
 # One-time setup on pypi.org (and test.pypi.org for dry runs):
@@ -13,6 +20,8 @@ name: Release
 # optionally upload to TestPyPI instead of PyPI.
 
 on:
+  push:
+    branches: [main]
   release:
     types: [published]
   workflow_dispatch:
@@ -32,8 +41,13 @@ permissions:
 
 jobs:
   version:
-    name: Check versions
+    name: Plan the release
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.plan.outputs.tag }}
+      run: ${{ steps.plan.outputs.run }}
+      target: ${{ steps.plan.outputs.target }}
     steps:
       - uses: actions/checkout@v4
       - name: pyproject.toml, Cargo.toml and the release tag agree
@@ -49,10 +63,40 @@ jobs:
             echo "::error::Release tag '$TAG' does not match version '$py'"
             exit 1
           fi
+      - name: Decide what this run releases
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TARGET: ${{ inputs.target }}
+        run: |
+          version=$(python3 -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          run=true target=pypi tag="v$version"
+          case "$EVENT" in
+            release) tag="$RELEASE_TAG" ;;
+            workflow_dispatch) target="${INPUT_TARGET:-none}" ;;
+            push)
+              status=$(curl -s -o /dev/null -w '%{http_code}' "https://pypi.org/pypi/python_local_ai/$version/json")
+              if [ "$status" = 200 ]; then
+                echo "::notice::python_local_ai $version is already on PyPI; nothing to release."
+                run=false target=none
+              elif git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+                echo "::notice::$tag is already tagged; its release owns the publish."
+                run=false target=none
+              fi ;;
+          esac
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "run=$run"
+            echo "target=$target"
+          } >> "$GITHUB_OUTPUT"
+          echo "version=$version tag=$tag run=$run target=$target"
 
   linux:
     name: Wheel (${{ matrix.manylinux }} ${{ matrix.target }})
     needs: version
+    if: needs.version.outputs.run == 'true'
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -77,6 +121,7 @@ jobs:
   macos:
     name: Wheel (macOS ${{ matrix.target }})
     needs: version
+    if: needs.version.outputs.run == 'true'
     # Foundation Models is only compiled in with the macOS 26 SDK; an older
     # Xcode would silently produce a wheel that always reports unavailable.
     runs-on: macos-26
@@ -128,6 +173,7 @@ jobs:
   windows:
     name: Wheel (Windows ${{ matrix.target }})
     needs: version
+    if: needs.version.outputs.run == 'true'
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -153,6 +199,7 @@ jobs:
   sdist:
     name: Source distribution
     needs: version
+    if: needs.version.outputs.run == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -194,13 +241,13 @@ jobs:
       - run: python -m pytest tests -p no:cacheprovider -o addopts="" -o testpaths=tests
 
   publish:
-    name: Publish to ${{ github.event_name == 'release' && 'PyPI' || 'TestPyPI' }}
-    needs: [test-wheels, sdist]
-    if: github.event_name == 'release' || inputs.target == 'testpypi'
+    name: Publish to ${{ needs.version.outputs.target == 'pypi' && 'PyPI' || 'TestPyPI' }}
+    needs: [version, test-wheels, sdist]
+    if: needs.version.outputs.target == 'pypi' || needs.version.outputs.target == 'testpypi'
     runs-on: ubuntu-latest
     environment:
-      name: ${{ github.event_name == 'release' && 'pypi' || 'testpypi' }}
-      url: ${{ github.event_name == 'release' && 'https://pypi.org/p/python_local_ai' || 'https://test.pypi.org/p/python_local_ai' }}
+      name: ${{ needs.version.outputs.target }}
+      url: ${{ needs.version.outputs.target == 'pypi' && 'https://pypi.org/p/python_local_ai' || 'https://test.pypi.org/p/python_local_ai' }}
     permissions:
       id-token: write   # Trusted Publishing
       attestations: write
@@ -212,4 +259,36 @@ jobs:
       - run: ls -l dist
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          repository-url: ${{ github.event_name == 'release' && 'https://upload.pypi.org/legacy/' || 'https://test.pypi.org/legacy/' }}
+          repository-url: ${{ needs.version.outputs.target == 'pypi' && 'https://upload.pypi.org/legacy/' || 'https://test.pypi.org/legacy/' }}
+
+  github-release:
+    name: GitHub release
+    needs: [version, publish]
+    if: needs.version.outputs.target == 'pypi'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the tag and release, upload assets
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create the release, or attach assets to the one being published
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          TAG: ${{ needs.version.outputs.tag }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          bash .github/scripts/release-notes.sh "$VERSION" CHANGELOG.md > notes.md
+          cat notes.md
+          ls -l dist
+          if [ "$EVENT" = release ]; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* \
+              --target "$GITHUB_SHA" \
+              --title "python_local_ai $VERSION" \
+              --notes-file notes.md
+          fi

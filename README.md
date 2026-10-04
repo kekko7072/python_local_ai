@@ -179,20 +179,28 @@ release `rust_local_ai` first, then bump it here and run the tests.
 
 ## Releasing
 
-`.github/workflows/release.yml` builds every wheel and the sdist, tests the
-installed wheels on Linux, macOS and Windows, and uploads them to PyPI through
-Trusted Publishing when a GitHub release is published:
+`.github/workflows/release.yml` releases from `main`. It builds every wheel
+and the sdist, tests the installed wheels on Linux, macOS and Windows,
+uploads them to PyPI through Trusted Publishing, and creates the GitHub
+release `v<version>` with the `CHANGELOG.md` entry and every distribution
+attached.
 
 1. One-time setup: on pypi.org, add a *pending trusted publisher* for the
    project `python_local_ai` (owner `kekko7072`, repository
    `python_local_ai`, workflow `release.yml`, environment `pypi`). Do the
    same on test.pypi.org with the environment `testpypi` for dry runs. Then
    create the `pypi` and `testpypi` environments in the GitHub repository
-   settings; adding required reviewers to `pypi` is recommended.
+   settings. Adding required reviewers to `pypi` is recommended: every
+   release then waits for your approval.
 2. Bump the version in `pyproject.toml`, `Cargo.toml` and
-   `python/python_local_ai/__init__.py`. The workflow refuses mismatches.
+   `python/python_local_ai/__init__.py`, and add a `## <version>` entry to
+   `CHANGELOG.md`. The workflow refuses mismatched versions.
 3. Optional dry run: Actions → Release → Run workflow → `testpypi`.
-4. Publish a GitHub release tagged `v<version>`.
+4. Merge to `main`. A version that is already on PyPI or already tagged is
+   skipped, so ordinary merges never publish anything.
+
+Publishing a GitHub release by hand (tag `v<version>`) also works: the
+distributions are published and attached to that release.
 
 ## License
 
