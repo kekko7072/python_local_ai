@@ -141,3 +141,12 @@ def test_repr_and_equality():
     assert caps == lai.Capabilities(streaming=True)
     assert "streaming=True" in repr(caps)
     assert repr(FakeBackend().model().backend).startswith("BackendInfo(kind=\"fake\"")
+
+
+def test_prepare_reports_availability_and_respects_close():
+    fake = FakeBackend()
+    model = fake.model()
+    assert model.prepare_sync().available
+    model.close()
+    with pytest.raises(lai.ModelClosedError):
+        model.prepare_sync()

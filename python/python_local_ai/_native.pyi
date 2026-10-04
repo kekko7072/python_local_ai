@@ -9,6 +9,7 @@ _BackendKind = Literal[
     "windows_ai",
     "ubuntu_inference_snap",
     "linux_provider",
+    "openai_compatible",
     "fake",
     "unsupported",
     "unknown",
@@ -27,6 +28,8 @@ _ResponseFormat = Union[Literal["text", "json"], Mapping[str, Any], None]
 
 __all__ = [
     "detect",
+    "openai_compatible",
+    "inference_snap",
     "LocalAiModel",
     "LocalAiSession",
     "ResponseStream",
@@ -35,10 +38,10 @@ __all__ = [
     "BackendInfo",
     "AiResponse",
     "FakeBackend",
-    "RUST_LOCAL_AI_REVISION",
+    "RUST_LOCAL_AI_VERSION",
 ]
 
-RUST_LOCAL_AI_REVISION: str
+RUST_LOCAL_AI_VERSION: str
 
 @final
 class BackendInfo:
@@ -105,6 +108,8 @@ class AiResponse:
     def finish_reason(self) -> Optional[str]: ...
 
 def detect() -> LocalAiModel: ...
+def openai_compatible(base_url: str, model: Optional[str] = None) -> LocalAiModel: ...
+def inference_snap(name: str) -> LocalAiModel: ...
 
 @final
 class LocalAiModel:
@@ -116,6 +121,8 @@ class LocalAiModel:
     def availability_sync(self) -> Availability: ...
     def capabilities(self) -> Awaitable[Capabilities]: ...
     def capabilities_sync(self) -> Capabilities: ...
+    def prepare(self) -> Awaitable[Availability]: ...
+    def prepare_sync(self) -> Availability: ...
     def open_session(self, instructions: Optional[str] = None) -> Awaitable[LocalAiSession]: ...
     def open_session_sync(self, instructions: Optional[str] = None) -> LocalAiSession: ...
     def close(self) -> None: ...

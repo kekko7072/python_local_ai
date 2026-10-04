@@ -27,6 +27,8 @@ from ._native import (
     LocalAiSession,
     ResponseStream,
     detect,
+    inference_snap,
+    openai_compatible,
 )
 
 __version__ = "0.1.0"
@@ -49,4 +51,6 @@ __all__ = [
     "UnavailableError",
     "UnsupportedCapabilityError",
     "detect",
+    "inference_snap",
+    "openai_compatible",
 ]
