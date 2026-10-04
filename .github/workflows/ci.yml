@@ -50,8 +50,10 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install maturin pytest mypy typing_extensions
           maturin develop
-          echo "VIRTUAL_ENV=$VIRTUAL_ENV" >> "$GITHUB_ENV"
-          dirname "$(command -v python)" >> "$GITHUB_PATH"
+          python -c "import sys; print('VIRTUAL_ENV=' + sys.prefix)" >> "$GITHUB_ENV"
+          # Native path (D:\...\Scripts on Windows) so every later shell, PowerShell
+          # included, resolves the venv's python first.
+          python -c "import os, sys; print(os.path.dirname(sys.executable))" >> "$GITHUB_PATH"
       - run: python -m pytest -v
       - name: Check type stubs against the compiled module
         run: python -m mypy.stubtest python_local_ai._native
@@ -75,7 +77,11 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install maturin
-      - run: maturin build --release --out dist
+      - name: maturin build
+        shell: bash
+        # The Swift runtime (libswift_Concurrency, libswiftCore) is part of
+        # macOS in /usr/lib/swift and must not be bundled into the wheel.
+        run: maturin build --release --locked --out dist ${{ runner.os == 'macOS' && '--auditwheel warn' || '' }}
       - run: maturin sdist --out dist
         if: matrix.os == 'ubuntu-latest'
       - uses: actions/upload-artifact@v4

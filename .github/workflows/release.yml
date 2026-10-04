@@ -106,7 +106,8 @@ jobs:
       - uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          args: --release --locked --out dist
+          # The Swift runtime ships with macOS (/usr/lib/swift); never bundle it.
+          args: --release --locked --out dist --auditwheel warn
       - name: Verify the Apple bridge is compiled in
         if: matrix.target == 'aarch64-apple-darwin'
         run: |
