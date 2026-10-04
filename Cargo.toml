@@ -20,7 +20,7 @@ pyo3 = { version = "0.29", features = ["abi3-py39"] }
 pyo3-async-runtimes = { version = "0.29", features = ["tokio-runtime"] }
 # The testing feature ships rust_local_ai's deterministic FakeBackend as
 # python_local_ai.testing, so downstream projects can test without OS AI.
-rust_local_ai = { git = "https://github.com/kekko7072/rust_local_ai", rev = "cfa69b154c48e0c8977948caac41ad61d8b144a4", features = ["testing"] }
+rust_local_ai = { git = "https://github.com/kekko7072/rust_local_ai", rev = "68d9edc026dac2c5e645a7f22bd8b6965aec2f40", features = ["testing"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "sync"] }
 

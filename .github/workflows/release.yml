@@ -1,0 +1,214 @@
+name: Release
+
+# Builds abi3 wheels and an sdist, then publishes them to PyPI when a GitHub
+# release is published. The tag must match the version in pyproject.toml and
+# Cargo.toml (`v0.1.0` or `0.1.0`).
+#
+# Publishing uses PyPI Trusted Publishing (OIDC), so no API token is stored.
+# One-time setup on pypi.org (and test.pypi.org for dry runs):
+#   Project: python_local_ai, Owner: kekko7072, Repository: python_local_ai,
+#   Workflow: release.yml, Environment: pypi (or testpypi).
+#
+# Run it manually (Actions → Release → Run workflow) to build every wheel and
+# optionally upload to TestPyPI instead of PyPI.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Where to upload the built distributions
+        type: choice
+        options: [none, testpypi]
+        default: none
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: Check versions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: pyproject.toml, Cargo.toml and the release tag agree
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          py=$(python3 -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          rs=$(python3 -c "import tomllib;print(tomllib.load(open('Cargo.toml','rb'))['package']['version'])")
+          init=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' python/python_local_ai/__init__.py)
+          echo "pyproject=$py cargo=$rs __version__=$init tag=${TAG:-<manual run>}"
+          [ "$py" = "$rs" ] && [ "$py" = "$init" ] || { echo "::error::Version mismatch"; exit 1; }
+          if [ -n "$TAG" ] && [ "${TAG#v}" != "$py" ]; then
+            echo "::error::Release tag '$TAG' does not match version '$py'"
+            exit 1
+          fi
+
+  linux:
+    name: Wheel (${{ matrix.manylinux }} ${{ matrix.target }})
+    needs: version
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64, manylinux: manylinux2014, runner: ubuntu-latest }
+          - { target: aarch64, manylinux: manylinux2014, runner: ubuntu-24.04-arm }
+          - { target: x86_64, manylinux: musllinux_1_2, runner: ubuntu-latest }
+          - { target: aarch64, manylinux: musllinux_1_2, runner: ubuntu-24.04-arm }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+          args: --release --locked --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-linux-${{ matrix.manylinux }}-${{ matrix.target }}
+          path: dist
+
+  macos:
+    name: Wheel (macOS ${{ matrix.target }})
+    needs: version
+    # Foundation Models is only compiled in with the macOS 26 SDK; an older
+    # Xcode would silently produce a wheel that always reports unavailable.
+    runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [aarch64-apple-darwin, x86_64-apple-darwin]
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "12.0"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require an SDK with FoundationModels
+        run: |
+          xcode=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1 || true)
+          if [ -n "$xcode" ]; then sudo xcode-select -s "$xcode"; fi
+          xcodebuild -version
+          sdk=$(xcrun --sdk macosx --show-sdk-version)
+          echo "macOS SDK $sdk"
+          echo 'import FoundationModels' | xcrun swiftc -typecheck - \
+            || { echo "::error::macOS SDK $sdk has no FoundationModels; refusing to build a wheel without Apple support"; exit 1; }
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          args: --release --locked --out dist
+      - name: Verify the Apple bridge is compiled in
+        if: matrix.target == 'aarch64-apple-darwin'
+        run: |
+          python -m pip install dist/*.whl
+          python - <<'PY'
+          import python_local_ai as lai
+          model = lai.detect()
+          a = model.availability_sync()
+          print(model.backend, a)
+          assert model.backend.kind == "apple_foundation_models", model.backend
+          assert a.detail != "This build SDK does not contain Foundation Models.", a
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-macos-${{ matrix.target }}
+          path: dist
+
+  windows:
+    name: Wheel (Windows ${{ matrix.target }})
+    needs: version
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x64, runner: windows-latest }
+          - { target: aarch64, runner: windows-11-arm }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: ${{ matrix.target == 'x64' && 'x64' || 'arm64' }}
+      - uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          args: --release --locked --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-windows-${{ matrix.target }}
+          path: dist
+
+  sdist:
+    name: Source distribution
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist
+
+  test-wheels:
+    name: Test installed wheel (${{ matrix.os }}, Python ${{ matrix.python }})
+    needs: [linux, macos, windows]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-26, windows-latest]
+        python: ["3.9", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: dist
+          merge-multiple: true
+      - name: Install the wheel from dist (never the source tree)
+        shell: bash
+        run: |
+          python -m pip install pytest
+          python -m pip install --no-index --find-links dist python_local_ai
+          # Run against the installed package, not ./python.
+          mv python python.src
+      - run: python -m pytest tests -p no:cacheprovider -o addopts="" -o testpaths=tests
+
+  publish:
+    name: Publish to ${{ github.event_name == 'release' && 'PyPI' || 'TestPyPI' }}
+    needs: [test-wheels, sdist]
+    if: github.event_name == 'release' || inputs.target == 'testpypi'
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.event_name == 'release' && 'pypi' || 'testpypi' }}
+      url: ${{ github.event_name == 'release' && 'https://pypi.org/p/python_local_ai' || 'https://test.pypi.org/p/python_local_ai' }}
+    permissions:
+      id-token: write   # Trusted Publishing
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - run: ls -l dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: ${{ github.event_name == 'release' && 'https://upload.pypi.org/legacy/' || 'https://test.pypi.org/legacy/' }}
