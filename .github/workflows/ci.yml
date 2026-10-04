@@ -81,7 +81,13 @@ jobs:
         shell: bash
         # The Swift runtime (libswift_Concurrency, libswiftCore) is part of
         # macOS in /usr/lib/swift and must not be bundled into the wheel.
-        run: maturin build --release --locked --out dist ${{ runner.os == 'macOS' && '--auditwheel warn' || '' }}
+        run: maturin build --release --locked --out dist ${{ runner.os == 'macOS' && '--auditwheel skip' || '' }}
+      - name: Install the built wheel and load the extension
+        shell: bash
+        run: |
+          python -m pip install dist/*.whl
+          cd "$RUNNER_TEMP"
+          python -c "import python_local_ai as lai; m = lai.detect(); print(m.backend, m.availability_sync())"
       - run: maturin sdist --out dist
         if: matrix.os == 'ubuntu-latest'
       - uses: actions/upload-artifact@v4

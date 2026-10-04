@@ -107,7 +107,7 @@ jobs:
         with:
           target: ${{ matrix.target }}
           # The Swift runtime ships with macOS (/usr/lib/swift); never bundle it.
-          args: --release --locked --out dist --auditwheel warn
+          args: --release --locked --out dist --auditwheel skip
       - name: Verify the Apple bridge is compiled in
         if: matrix.target == 'aarch64-apple-darwin'
         run: |
