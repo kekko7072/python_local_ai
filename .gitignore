@@ -1,7 +1,10 @@
+target/
 __pycache__/
 *.py[cod]
-.pytest_cache/
-.venv/
-build/
-dist/
+*.so
+*.pyd
 *.egg-info/
+.venv/
+.pytest_cache/
+dist/
+.DS_Store
