@@ -182,7 +182,7 @@ dependencies = [
 
 [[package]]
 name = "python_local_ai"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "futures-util",
  "pyo3",
@@ -203,9 +203,9 @@ dependencies = [
 
 [[package]]
 name = "rust_local_ai"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e72a3404edde84a24f19bbdd3892d6fbe0bfdca3d3f5d7480fee936e3677980a"
+checksum = "efbe7fc998bbc0fd9e58b1367d45133fd27373bec50d8308cc6eb3fa9d016894"
 dependencies = [
  "async-trait",
  "futures-core",

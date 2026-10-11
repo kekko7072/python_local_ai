@@ -168,11 +168,11 @@ python -m mypy.stubtest python_local_ai._native
 cargo fmt --check && cargo clippy --all-targets -- -D warnings
 ```
 
-CI runs these steps on Linux, macOS and Windows with Python 3.9 and 3.13, runs
+CI runs these steps on Linux, macOS and Windows with Python 3.9 and 3.14, runs
 the examples, and builds abi3 wheels and an sdist as artifacts. CI never
 publishes.
 
-The Rust core comes from crates.io (`rust_local_ai = "0.2.0"` in
+The Rust core comes from crates.io (`rust_local_ai = "0.2.1"` in
 `Cargo.toml`, locked in `Cargo.lock`). The resolved version is exposed as
 `python_local_ai._native.RUST_LOCAL_AI_VERSION`. To move to a new core,
 release `rust_local_ai` first, then bump it here and run the tests.

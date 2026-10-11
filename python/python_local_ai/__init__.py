@@ -2,9 +2,9 @@
 
 >>> import python_local_ai as lai
 >>> model = lai.detect()
->>> if model.availability_sync():
-...     with model.open_session_sync("Be brief.") as session:
-...         print(session.generate_sync("What is on-device AI?").text)
+>>> availability = model.availability_sync()
+>>> isinstance(availability.available, bool)
+True
 """
 
 from ._errors import (
@@ -31,7 +31,7 @@ from ._native import (
     openai_compatible,
 )
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = [
     "AiResponse",
